@@ -1,0 +1,29 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.ExpertVagabond/photo-organizer",
+  "description": "AI-powered organization for Google Photos and Drive - auto-organize, find duplicates, create albums",
+  "repository": {
+    "url": "https://github.com/ExpertVagabond/photo-organizer-mcp",
+    "source": "github"
+  },
+  "version": "1.0.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "photo-organizer-mcp",
+      "version": "1.0.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "description": "Path to Python scripts directory containing drive_organizer.py and photos_organizer.py",
+          "isRequired": true,
+          "format": "string",
+          "isSecret": false,
+          "name": "PHOTO_SCRIPTS_PATH"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "name": "photo-organizer-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for organizing Google Photos and Drive - AI agents can auto-organize your cloud storage",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "photo-organizer-mcp": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "google-photos",
+    "google-drive",
+    "organization",
+    "automation",
+    "ai-agent",
+    "claude",
+    "anthropic"
+  ],
+  "author": "ExpertVagabond",
+  "license": "MIT",
+  "mcpName": "io.github.ExpertVagabond/photo-organizer",
+  "homepage": "https://github.com/ExpertVagabond/photo-organizer-mcp",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ExpertVagabond/photo-organizer-mcp.git"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "dotenv": "^16.4.7"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.3.3"
+  }
+}
