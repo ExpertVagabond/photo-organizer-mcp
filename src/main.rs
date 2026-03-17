@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::io::BufRead;
 use std::process::Command;
 use tracing::info;
@@ -64,15 +64,23 @@ fn call_tool(name: &str, args: &Value) -> Result<Value, String> {
         "organize_photos_by_date" => {
             let grouping = args["grouping"].as_str().unwrap_or("year");
             let execute = args["execute"].as_bool().unwrap_or(false);
-            let mut script_args = vec![if grouping == "year" { "--by-year" } else { "--by-month" }];
-            if execute { script_args.push("--execute"); }
+            let mut script_args = vec![if grouping == "year" {
+                "--by-year"
+            } else {
+                "--by-month"
+            }];
+            if execute {
+                script_args.push("--execute");
+            }
             run_python("photos_organizer.py", &script_args)?
         }
         "analyze_drive" => run_python("drive_organizer.py", &["--report"])?,
         "organize_drive" => {
             let execute = args["execute"].as_bool().unwrap_or(false);
             let mut a = vec!["--organize"];
-            if execute { a.push("--execute"); }
+            if execute {
+                a.push("--execute");
+            }
             run_python("drive_organizer.py", &a)?
         }
         "archive_old_files" => {
@@ -80,13 +88,17 @@ fn call_tool(name: &str, args: &Value) -> Result<Value, String> {
             let execute = args["execute"].as_bool().unwrap_or(false);
             let days_str = days.to_string();
             let mut a = vec!["--archive", "--days", &days_str];
-            if execute { a.push("--execute"); }
+            if execute {
+                a.push("--execute");
+            }
             run_python("drive_organizer.py", &a)?
         }
         "deduplicate_drive" => {
             let execute = args["execute"].as_bool().unwrap_or(false);
             let mut a = vec!["--dedupe"];
-            if execute { a.push("--execute"); }
+            if execute {
+                a.push("--execute");
+            }
             run_python("drive_organizer.py", &a)?
         }
         _ => return Err(format!("Unknown tool: {name}")),
@@ -96,30 +108,50 @@ fn call_tool(name: &str, args: &Value) -> Result<Value, String> {
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt().with_env_filter("info").with_writer(std::io::stderr).init();
+    tracing_subscriber::fmt()
+        .with_env_filter("info")
+        .with_writer(std::io::stderr)
+        .init();
     info!("photo-organizer-mcp starting on stdio");
     let stdin = std::io::stdin();
     let stdout = std::io::stdout();
     let mut line = String::new();
     loop {
         line.clear();
-        if stdin.lock().read_line(&mut line).unwrap_or(0) == 0 { break; }
+        if stdin.lock().read_line(&mut line).unwrap_or(0) == 0 {
+            break;
+        }
         let trimmed = line.trim();
-        if trimmed.is_empty() { continue; }
-        let req: JsonRpcRequest = match serde_json::from_str(trimmed) { Ok(r) => r, Err(_) => continue };
+        if trimmed.is_empty() {
+            continue;
+        }
+        let req: JsonRpcRequest = match serde_json::from_str(trimmed) {
+            Ok(r) => r,
+            Err(_) => continue,
+        };
         let response = match req.method.as_str() {
-            "initialize" => json!({"jsonrpc":"2.0","id":req.id,"result":{"protocolVersion":"2024-11-05","capabilities":{"tools":{}},"serverInfo":{"name":"photo-organizer-mcp","version":"0.1.0"}}}),
+            "initialize" => {
+                json!({"jsonrpc":"2.0","id":req.id,"result":{"protocolVersion":"2024-11-05","capabilities":{"tools":{}},"serverInfo":{"name":"photo-organizer-mcp","version":"0.1.0"}}})
+            }
             "notifications/initialized" => continue,
-            "tools/list" => json!({"jsonrpc":"2.0","id":req.id,"result":{"tools":tool_definitions()}}),
+            "tools/list" => {
+                json!({"jsonrpc":"2.0","id":req.id,"result":{"tools":tool_definitions()}})
+            }
             "tools/call" => {
                 let tn = req.params["name"].as_str().unwrap_or("");
                 let a = &req.params["arguments"];
                 match call_tool(tn, a) {
-                    Ok(r) => json!({"jsonrpc":"2.0","id":req.id,"result":{"content":[{"type":"text","text":serde_json::to_string_pretty(&r).unwrap_or_default()}]}}),
-                    Err(e) => json!({"jsonrpc":"2.0","id":req.id,"result":{"content":[{"type":"text","text":format!("Error: {e}")}],"isError":true}}),
+                    Ok(r) => {
+                        json!({"jsonrpc":"2.0","id":req.id,"result":{"content":[{"type":"text","text":serde_json::to_string_pretty(&r).unwrap_or_default()}]}})
+                    }
+                    Err(e) => {
+                        json!({"jsonrpc":"2.0","id":req.id,"result":{"content":[{"type":"text","text":format!("Error: {e}")}],"isError":true}})
+                    }
                 }
             }
-            _ => json!({"jsonrpc":"2.0","id":req.id,"error":{"code":-32601,"message":format!("Unknown method: {}",req.method)}}),
+            _ => {
+                json!({"jsonrpc":"2.0","id":req.id,"error":{"code":-32601,"message":format!("Unknown method: {}",req.method)}})
+            }
         };
         use std::io::Write;
         let out = serde_json::to_string(&response).unwrap();
