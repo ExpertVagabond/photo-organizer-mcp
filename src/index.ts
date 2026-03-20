@@ -12,31 +12,100 @@ import {
   ListToolsRequestSchema,
   Tool,
 } from '@modelcontextprotocol/sdk/types.js';
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
 import * as dotenv from 'dotenv';
 import * as path from 'path';
+import * as fs from 'fs';
 
 dotenv.config();
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
-// Path to Python scripts
-const SCRIPTS_PATH = process.env.PHOTO_SCRIPTS_PATH || path.join(process.env.HOME || '', 'drive-photos-organizer');
+// --- Security helpers ---
 
-// Helper to run Python scripts
+/** Shell metacharacters that must never appear in arguments. */
+const SHELL_METACHAR_RE = /[;|&$`\\(){}<>!\n\r\0]/;
+
+/** Allowed Python script basenames. */
+const ALLOWED_SCRIPTS = new Set(['photos_organizer.py', 'drive_organizer.py']);
+
+/** Allowed MCP tool names. */
+const ALLOWED_TOOLS = new Set([
+  'analyze_photos',
+  'organize_photos_by_date',
+  'analyze_drive',
+  'organize_drive',
+  'archive_old_files',
+  'deduplicate_drive',
+]);
+
+/**
+ * Validate that a path is absolute, contains no ".." traversal, and exists on disk.
+ */
+function validatePath(p: string): string {
+  if (!path.isAbsolute(p)) {
+    throw new Error('Scripts path must be absolute');
+  }
+  if (p.includes('..')) {
+    throw new Error("Scripts path must not contain '..'");
+  }
+  const resolved = fs.realpathSync(p); // resolves symlinks, throws if missing
+  return resolved;
+}
+
+/**
+ * Sanitize a single argument — reject if it contains shell metacharacters.
+ */
+function sanitizeArg(arg: string): void {
+  if (SHELL_METACHAR_RE.test(arg)) {
+    throw new Error(`Argument contains forbidden characters`);
+  }
+}
+
+// Validate SCRIPTS_PATH at startup
+const SCRIPTS_PATH_RAW = process.env.PHOTO_SCRIPTS_PATH || path.join(process.env.HOME || '', 'drive-photos-organizer');
+let SCRIPTS_PATH: string;
+try {
+  SCRIPTS_PATH = validatePath(SCRIPTS_PATH_RAW);
+} catch {
+  console.error(`FATAL: Invalid PHOTO_SCRIPTS_PATH: ${SCRIPTS_PATH_RAW}`);
+  process.exit(1);
+}
+
+// Helper to run Python scripts (uses execFile — no shell interpretation)
 async function runPythonScript(scriptName: string, args: string[] = []): Promise<string> {
+  // Validate script name against allowlist
+  if (!ALLOWED_SCRIPTS.has(scriptName)) {
+    throw new Error('Invalid script name');
+  }
+
+  // Validate every argument
+  for (const arg of args) {
+    sanitizeArg(arg);
+  }
+
   const scriptPath = path.join(SCRIPTS_PATH, scriptName);
-  const command = `cd "${SCRIPTS_PATH}" && python3 "${scriptPath}" ${args.join(' ')}`;
+
+  // Ensure resolved script path stays inside SCRIPTS_PATH
+  const resolvedScript = fs.realpathSync(scriptPath);
+  if (!resolvedScript.startsWith(SCRIPTS_PATH + path.sep) && resolvedScript !== SCRIPTS_PATH) {
+    throw new Error('Script path escapes the scripts directory');
+  }
 
   try {
-    const { stdout, stderr } = await execAsync(command, {
+    const { stdout, stderr } = await execFileAsync('python3', [resolvedScript, ...args], {
+      cwd: SCRIPTS_PATH,
       maxBuffer: 10 * 1024 * 1024, // 10MB buffer
       timeout: 300000, // 5 minute timeout
     });
-    return stdout + (stderr ? `\n\nWarnings:\n${stderr}` : '');
-  } catch (error: any) {
-    throw new Error(`Script execution failed: ${error.message}\n${error.stdout || ''}\n${error.stderr || ''}`);
+    if (stderr) {
+      console.error(`Script stderr: ${stderr}`);
+    }
+    return stdout + (stderr ? '\n\n(script produced warnings — see server logs)' : '');
+  } catch {
+    // Do not expose internal error details to callers
+    throw new Error('Script execution failed — check server logs for details');
   }
 }
 
@@ -162,6 +231,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
 
+  // Validate tool name against allowlist before dispatching
+  if (!ALLOWED_TOOLS.has(name)) {
+    return {
+      content: [{ type: 'text', text: 'Error: Unknown or disallowed tool' }],
+      isError: true,
+    };
+  }
+
   try {
     let result: string;
 
@@ -240,11 +317,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       ],
     };
   } catch (error) {
+    // Log full error server-side for debugging
+    console.error('Tool execution error:', error);
+    // Return only a safe message to the caller
+    const safeMessage = error instanceof Error ? error.message : 'An unexpected error occurred';
     return {
       content: [
         {
           type: 'text',
-          text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+          text: `Error: ${safeMessage}`,
         },
       ],
       isError: true,
